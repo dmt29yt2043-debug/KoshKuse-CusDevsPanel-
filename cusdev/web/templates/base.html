@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Голоса тестеров Kosh Kuse{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">Kosh Kuse · обратная связь от тестеров</span>
+      <h1>{% block heading %}Что сейчас говорят люди{% endblock %}</h1>
+    </div>
+    <div class="pipe" aria-label="Состояние трубы">
+      <span class="chip"><span class="dot off" id="agentDot"></span><span id="agentText">Проверяю Мак…</span></span>
+      <span class="chip" id="queueChip">В очереди: —</span>
+      {% block headlink %}<a class="chip" href="/upload">Загрузить записи →</a>{% endblock %}
+    </div>
+  </header>
+  {% block content %}{% endblock %}
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="/static/common.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

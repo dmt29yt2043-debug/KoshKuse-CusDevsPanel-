@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Загрузка записей · Голоса тестеров{% endblock %}
+{% block heading %}Загрузить разговоры с тестерами{% endblock %}
+{% block headlink %}<a class="chip" href="/">← К цитатам</a>{% endblock %}
+{% block content %}
+  <section class="panel" aria-labelledby="h-new">
+    <div class="row" style="justify-content:space-between">
+      <h2 class="sec" id="h-new">Новый разговор</h2>
+      <div class="alt" role="tablist">
+        <button class="pill" id="modeFiles" aria-pressed="true">Файлы и скриншоты</button>
+        <button class="pill" id="modeText" aria-pressed="false">Вставить текст переписки</button>
+      </div>
+    </div>
+
+    <div class="form">
+      <div class="field">
+        <label for="tester">Кто тестер <span class="req">*</span></label>
+        <input id="tester" list="testerList" autocomplete="off" placeholder="Анна К.">
+        <datalist id="testerList"></datalist>
+      </div>
+      <div class="field">
+        <label for="sku">Какое СКЮ обсуждали</label>
+        <select id="sku"><option value="">Не знаю — пусть определит разбор</option></select>
+      </div>
+      <div class="field">
+        <label for="channel">Канал</label>
+        <select id="channel"></select>
+      </div>
+      <div class="field">
+        <label for="note">Заметка</label>
+        <input id="note" maxlength="300" placeholder="одна строка, необязательно">
+      </div>
+    </div>
+
+    <div id="filesPane" style="display:grid;gap:12px">
+      <label class="drop" id="drop" for="fileInput">
+        <b>Перетащите сюда записи или скриншоты</b>
+        <span>.m4a, .mp3, .wav, .ogg, .opus — звонки, диктофон, голосовые из Telegram · .png, .jpg — скриншоты переписки · можно сразу много. Скриншот можно и просто вставить: ⌘V</span>
+        <input id="fileInput" type="file" multiple hidden
+               accept=".m4a,.mp3,.wav,.ogg,.opus,.oga,.aac,.mp4,.png,.jpg,.jpeg,.webp,.heic,.txt,audio/*,image/*">
+      </label>
+      <div class="files" id="files"></div>
+    </div>
+
+    <div id="textPane" hidden>
+      <div class="field">
+        <label for="text">Текст переписки</label>
+        <textarea id="text" placeholder="Скопируйте сюда переписку с тестером целиком — как есть, с именами и датами"></textarea>
+      </div>
+    </div>
+
+    <div class="row" style="justify-content:space-between">
+      <span class="note" id="hint">Дата разговора берётся из даты файла — поправьте, если нужно.</span>
+      <button class="btn" id="send" disabled>Отправить в разбор</button>
+    </div>
+    <div id="result" class="files"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-queue">
+    <div class="row" style="justify-content:space-between">
+      <h2 class="sec" id="h-queue">Очередь</h2>
+      <span class="note" id="queueNote"></span>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Загружено</th><th>Тестер</th><th>Что</th><th>Длит.</th><th>Статус</th><th></th></tr></thead>
+      <tbody id="queueBody"><tr><td colspan="6">Загружаю…</td></tr></tbody>
+    </table></div>
+  </section>
+{% endblock %}
+{% block scripts %}<script src="/static/upload.js"></script>{% endblock %}

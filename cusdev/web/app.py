@@ -5,11 +5,14 @@
 
 import secrets
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -17,14 +20,18 @@ from sqlalchemy.orm import Session, selectinload
 from cusdev import queue
 from cusdev.config import Settings, get_settings
 from cusdev.db import get_session
-from cusdev.models import Conversation, Tester
-from cusdev.schemas import ParseResult, SourceKind
+from cusdev.models import Conversation, FeedbackItemRow, Tester
+from cusdev.schemas import ParseResult, SourceKind, Status
 from cusdev.taxonomy import Taxonomy, get_taxonomy
 
 COOKIE = "cusdev_key"
 COOKIE_MAX_AGE = 90 * 24 * 3600
 
+WEB = Path(__file__).parent
+
 app = FastAPI(title="Kosh Kuse — голоса тестеров")
+app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
+templates = Jinja2Templates(directory=WEB / "templates")
 
 SessionDep = Annotated[Session, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -66,8 +73,20 @@ def index(request: Request, settings: SettingsDep, key: str | None = None) -> Re
             secure=settings.app_base_url.startswith("https"),
         )  # fmt: skip
         return resp
-    require_team(request, settings)
-    return PlainTextResponse("Kosh Kuse — голоса тестеров. Страницы появятся на этапах 5–6.")
+    return _page(request, settings, "dashboard.html")
+
+
+@app.get("/upload")
+def upload_page(request: Request, settings: SettingsDep) -> Response:
+    return _page(request, settings, "upload.html")
+
+
+def _page(request: Request, settings: Settings, template: str) -> Response:
+    try:
+        require_team(request, settings)
+    except HTTPException:
+        return templates.TemplateResponse(request, "locked.html", status_code=401)
+    return templates.TemplateResponse(request, template)
 
 
 @app.get("/health")
@@ -305,3 +324,102 @@ class FailIn(BaseModel):
 @app.post("/api/agent/jobs/{conv_id}/fail", dependencies=[Agent], status_code=204)
 def agent_fail(conv_id: int, body: FailIn, session: SessionDep) -> None:
     _queue_call(queue.fail, session, conv_id, body.reason)
+
+
+# ───────────────────────── дашборд (команда) ─────────────────────────
+
+
+@app.get("/api/taxonomy", dependencies=[Team])
+def taxonomy_view(taxonomy: TaxonomyDep) -> dict:
+    return {
+        "skus": taxonomy.skus,
+        "formats": taxonomy.formats,
+        "verdicts": taxonomy.verdicts,
+        "themes": taxonomy.themes,
+        "channels": taxonomy.channels,
+        "default_channel": taxonomy.default_channel,
+    }
+
+
+def _local(dt: datetime, settings: Settings) -> str:
+    return queue.as_utc(dt).astimezone(ZoneInfo(settings.timezone)).isoformat()
+
+
+def _items(conv: Conversation) -> list[dict]:
+    return [
+        {
+            "sku": it.sku,
+            "format": it.format,
+            "verdict": it.verdict,
+            "themes": it.themes or [],
+            "quotes": [{"text": q.text, "theme": q.theme} for q in it.quotes],
+        }
+        for it in conv.items
+    ]
+
+
+@app.get("/api/dashboard", dependencies=[Team])
+def dashboard(session: SessionDep, settings: SettingsDep) -> dict:
+    """Всё для трёх экранов одним ответом: на панели в десятки человек это килобайты."""
+    convs = session.scalars(
+        select(Conversation)
+        .where(Conversation.status == Status.done)
+        .options(
+            selectinload(Conversation.tester),
+            selectinload(Conversation.items).selectinload(FeedbackItemRow.quotes),
+        )
+        .order_by(Conversation.talked_at.desc())
+    )
+    return {
+        "today": datetime.now(ZoneInfo(settings.timezone)).date().isoformat(),
+        "testers": list(session.scalars(select(Tester.name).order_by(Tester.name))),
+        "conversations": [
+            {
+                "id": c.id,
+                "date": _local(c.talked_at, settings),
+                "tester": c.tester.name,
+                "channel": c.channel,
+                "summary": c.summary or "",
+                "doc": c.drive_doc_url,
+                "items": _items(c),
+            }
+            for c in convs
+        ],
+    }
+
+
+@app.get("/api/conversations/{conv_id}", dependencies=[Team])
+def conversation(conv_id: int, session: SessionDep, settings: SettingsDep) -> dict:
+    c = _conv(session, conv_id)
+    return {
+        "id": c.id,
+        "date": _local(c.talked_at, settings),
+        "tester": c.tester.name,
+        "channel": c.channel,
+        "kind": c.source_kind,
+        "duration_sec": c.duration_sec,
+        "note": c.note,
+        "summary": c.summary or "",
+        "speakers": c.speakers,
+        "transcript": c.transcript or "",
+        "doc": c.drive_doc_url,
+        "items": _items(c),
+    }
+
+
+@app.get("/api/search", dependencies=[Team])
+def search(q: str, session: SessionDep) -> list[int]:
+    """Поиск по транскриптам и саммари. В Python, а не в SQL: lower() SQLite не знает кириллицу."""
+    needle = q.strip().casefold().replace("ё", "е")
+    if len(needle) < 2:
+        return []
+    rows = session.execute(
+        select(Conversation.id, Conversation.transcript, Conversation.summary).where(
+            Conversation.status == Status.done
+        )
+    )
+    return [
+        cid
+        for cid, transcript, summary in rows
+        if needle in f"{transcript or ''}\n{summary or ''}".casefold().replace("ё", "е")
+    ]

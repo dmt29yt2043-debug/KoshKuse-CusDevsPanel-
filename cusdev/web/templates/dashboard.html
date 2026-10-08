@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-feed" aria-selected="true" data-tab="feed">Что сказали <span class="n" id="nQuotes"></span></button>
+    <button class="tab" role="tab" id="tab-sku" aria-selected="false" data-tab="sku">Срезы по СКЮ</button>
+    <button class="tab" role="tab" id="tab-panel" aria-selected="false" data-tab="panel">Панель <span class="n" id="nTesters"></span></button>
+  </nav>
+
+  <section id="feed" style="display:grid;gap:16px">
+    <div class="filters">
+      <div class="row"><input id="q" class="search" type="search" placeholder="Поиск по цитатам и полным транскриптам: «запах», «стул», «крышка»…"></div>
+      <div class="row"><span class="lbl">СКЮ</span><span id="fSku" class="row"></span></div>
+      <div class="row"><span class="lbl">Вердикт</span><span id="fVerdict" class="row"></span></div>
+      <div class="row"><span class="lbl">Ещё</span>
+        <select id="fTheme" class="sel" aria-label="Тема"></select>
+        <select id="fTester" class="sel" aria-label="Тестер"></select>
+        <select id="fPeriod" class="sel" aria-label="Период">
+          <option value="0">За всё время</option><option value="7">За 7 дней</option><option value="30">За 30 дней</option>
+        </select>
+      </div>
+    </div>
+    <div class="feed-head"><span id="feedCount"></span><button class="link" id="reset">Сбросить фильтры</button></div>
+    <div id="hits" class="msg" hidden></div>
+    <div id="feedList" class="feed"><div class="empty">Загружаю…</div></div>
+  </section>
+
+  <section id="sku" hidden style="display:grid;gap:16px">
+    <p class="note">Абсолютные числа, без процентов: при двух десятках разговоров «3 против 5» — это отдельные голоса, а не тренд. Нажмите на СКЮ, чтобы открыть его цитаты.</p>
+    <div id="skuList" class="skus"></div>
+  </section>
+
+  <section id="panel" hidden style="display:grid;gap:16px">
+    <div id="stats" class="stats"></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th data-sort="name">Тестер</th><th data-sort="n">Разговоров</th><th data-sort="last">Последний</th><th>Пробовал</th></tr></thead>
+      <tbody id="panelBody"></tbody>
+    </table></div>
+  </section>
+
+  <dialog id="dlg"><div class="dlg" id="dlgBody"></div></dialog>
+{% endblock %}
+{% block scripts %}<script src="/static/dashboard.js"></script>{% endblock %}

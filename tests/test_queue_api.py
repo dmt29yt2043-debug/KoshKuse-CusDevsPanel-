@@ -123,3 +123,40 @@ def test_secret_link_sets_cookie(client, settings):
     r = client.get("/?key=team-key", follow_redirects=False)
     assert r.status_code == 303 and "cusdev_key" in r.cookies
     assert client.get("/api/queue").status_code == 200
+
+
+def _done(client, tester="Анна К.", text=TRANSCRIPT):
+    conv_id = client.post("/api/text", json={"tester": tester, "text": text}).json()["id"]
+    client.post("/api/agent/next", headers=AGENT)
+    client.post(
+        f"/api/agent/jobs/{conv_id}/result",
+        headers=AGENT,
+        json={"transcript": text, "result": RESULT, "model": "m"},
+    )
+    return conv_id
+
+
+def test_dashboard_lists_only_done_with_items(client):
+    done_id = _done(client)
+    client.post("/api/text", json={"tester": "Ольга М.", "text": "ещё не разобрано"})
+    data = client.get("/api/dashboard").json()
+    assert [c["id"] for c in data["conversations"]] == [done_id]
+    assert data["testers"] == ["Анна К.", "Ольга М."]  # молчащие тоже в панели
+    assert data["conversations"][0]["items"][0]["quotes"] == [
+        {"text": "вылизала миску", "theme": None}
+    ]
+
+
+def test_search_is_case_and_yo_insensitive_for_cyrillic(client):
+    conv_id = _done(client, text="Ёжик съел ИНДЕЙКУ и вылизала миску")
+    assert client.get("/api/search", params={"q": "индейку"}).json() == [conv_id]
+    assert client.get("/api/search", params={"q": "ежик"}).json() == [conv_id]
+    assert client.get("/api/search", params={"q": "говядина"}).json() == []
+
+
+def test_pages_render_and_lock(client, settings):
+    assert "Что сейчас говорят люди" in client.get("/").text
+    assert "Новый разговор" in client.get("/upload").text
+    settings.access_key = "team-key"
+    locked = client.get("/upload")
+    assert locked.status_code == 401 and "ссылке с ключом" in locked.text
