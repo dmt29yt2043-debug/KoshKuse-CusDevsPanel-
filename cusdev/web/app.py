@@ -32,6 +32,8 @@ WEB = Path(__file__).parent
 app = FastAPI(title="Kosh Kuse — голоса тестеров")
 app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
 templates = Jinja2Templates(directory=WEB / "templates")
+# метка версии к /static/*: после деплоя браузеры команды не держат старые стили и скрипты
+templates.env.globals["v"] = int(max(f.stat().st_mtime for f in (WEB / "static").iterdir()))
 
 SessionDep = Annotated[Session, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]

@@ -158,9 +158,9 @@ a { color: var(--accent); }
 .btn { padding: 10px 18px; border-radius: 8px; border: 0; background: var(--accent); color: var(--surface); font-weight: 600; cursor: pointer; }
 .btn:disabled { opacity: .5; cursor: default; }
 .files { display: grid; gap: 8px; }
-.file { display: grid; grid-template-columns: minmax(0, 1fr) 150px 32px; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.file { display: grid; grid-template-columns: minmax(0, 1fr) 200px 32px; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
 .file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file input { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; }
+.file input { width: 100%; min-width: 0; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; }
 .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; }
 .alt { display: flex; gap: 6px; flex-wrap: wrap; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 14px; }
@@ -178,3 +178,4 @@ tr.overdue td { background: var(--warn-bg); }
 /* ── разговор в диалоге */
 .transcript { white-space: pre-wrap; font-size: 14px; line-height: 1.6; max-height: 40vh; overflow: auto; background: var(--sunken); border-radius: 8px; padding: 12px; }
 .transcript mark { background: var(--accent-soft); color: inherit; }
+@media (max-width: 520px) { .file { grid-template-columns: minmax(0, 1fr) 32px; } .file input { grid-column: 1; grid-row: 2; } .file .x { grid-row: 1 / 3; grid-column: 2; } }

@@ -20,7 +20,7 @@
       </div>
       <div class="field">
         <label for="sku">Какое СКЮ обсуждали</label>
-        <select id="sku"><option value="">Не знаю — пусть определит разбор</option></select>
+        <select id="sku"><option value="">Не знаю</option></select>
       </div>
       <div class="field">
         <label for="channel">Канал</label>
@@ -34,7 +34,7 @@
 
     <div id="filesPane" style="display:grid;gap:12px">
       <label class="drop" id="drop" for="fileInput">
-        <b>Перетащите сюда записи или скриншоты</b>
+        <b>Перетащите сюда записи или скриншоты — или нажмите, чтобы выбрать</b>
         <span>.m4a, .mp3, .wav, .ogg, .opus — звонки, диктофон, голосовые из Telegram · .png, .jpg — скриншоты переписки · можно сразу много. Скриншот можно и просто вставить: ⌘V</span>
         <input id="fileInput" type="file" multiple hidden
                accept=".m4a,.mp3,.wav,.ogg,.opus,.oga,.aac,.mp4,.png,.jpg,.jpeg,.webp,.heic,.txt,audio/*,image/*">
@@ -67,4 +67,4 @@
     </table></div>
   </section>
 {% endblock %}
-{% block scripts %}<script src="/static/upload.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/upload.js?v={{ v }}"></script>{% endblock %}
