@@ -1,5 +1,5 @@
 # Прод на общем VPS (ARCHITECTURE.md, Р3). Наружу отдаёт host-Caddy:
-#   cusdev.srv1362562.hstgr.cloud { reverse_proxy localhost:8210 }
+#   kk-voices.pulseup.me { reverse_proxy localhost:8210 }  (и старый cusdev.srv1362562.hstgr.cloud)
 # База и аудио — в /opt/cusdev-data, ВНЕ дерева, которое перезаписывает rsync --delete.
 name: cusdev
 

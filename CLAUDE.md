@@ -61,7 +61,7 @@
 2. Ярлыки тем — черновик из ТЗ, 11 штук с «другое».
 3. Сколько человек в панели — решает, нужен ли экран панели (этап 9).
 4. Полные имена или «Имя + инициал». Пока: храним как ввели, в форме подсказка «Анна К.».
-5. Подписка вместо API (08.10): CLI `claude` на Маке нужно авторизовать — `claude setup-token`, токен в `.env` как `CLAUDE_CODE_OAUTH_TOKEN`.
+5. Подписка вместо API (08.10): Макс входит в CLI сам (`claude` → `/login`); токен в `.env` не кладём — Макс против.
 
 ## Журнал
 
@@ -85,3 +85,6 @@
   `cusdev.srv1362562.hstgr.cloud` в конце Caddyfile (`request_body max_size 500MB`), бэкап
   `/root/Caddyfile.bak.cusdev.*`. С сервера по публичному адресу — 200. С Мака Макса HTTPS к VPS
   рвётся на рукопожатии (WRONG_VERSION_NUMBER) — и у Trello тоже, т.е. это сеть Мака, не деплой.
+- 08.10.2026. `*.hstgr.cloud` из сети Макса не открывается (SNI-фильтр), переехали на
+  `kk-voices.pulseup.me` (wildcard DNS). Агент установлен в launchd (`com.koshkuse.cusdev-agent`),
+  лог `~/CusDev-Pipeline/agent.log`, `.env` на Маке — только AGENT_SERVER_URL и AGENT_TOKEN.
