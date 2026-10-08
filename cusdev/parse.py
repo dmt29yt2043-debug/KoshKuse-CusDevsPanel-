@@ -29,25 +29,25 @@ CLI_TIMEOUT_SEC = 600
 
 
 class ParseError(RuntimeError):
-    pass
+    """Модель не вернула валидный разбор: проблема конкретного разговора."""
+
+
+class CliError(ParseError):
+    """Сам CLI не отработал (истёк токен, нет сети, лимит подписки): разговор ни при чём,
+    агент повторит позже, а не пометит задачу упавшей."""
 
 
 # (system, user, json_schema, model) → dict от модели или None, если ответа нет
 Backend = Callable[[str, str, dict[str, Any], str], dict[str, Any] | None]
 
 
-def claude_cli_backend(
-    system: str, user: str, schema: dict[str, Any], model: str
-) -> dict[str, Any] | None:
-    """Один вызов `claude -p` со строгой схемой. Без инструментов, MCP, CLAUDE.md и истории."""
+def _run_claude(args: list[str], user: str, cwd: str) -> dict[str, Any]:
+    """`claude -p … --output-format json` без MCP, настроек и истории. Возвращает JSON ответа."""
     cmd = [
         os.environ.get("CLAUDE_BIN", "claude"),
         "-p",
-        "--model", model,
-        "--system-prompt", system,
-        "--json-schema", json.dumps(schema, ensure_ascii=False),
+        *args,
         "--output-format", "json",
-        "--tools", "",
         "--setting-sources", "",
         "--strict-mcp-config",
         "--no-session-persistence",
@@ -56,17 +56,34 @@ def claude_cli_backend(
     token = get_settings().claude_code_oauth_token
     if token:
         env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-    with tempfile.TemporaryDirectory() as cwd:  # чтобы не подтянулся CLAUDE.md репозитория
+    try:
         proc = subprocess.run(
             cmd, input=user, capture_output=True, text=True,
             cwd=cwd, env=env, timeout=CLI_TIMEOUT_SEC,
         )  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CliError(f"claude CLI: {exc}") from exc
     try:
         out = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ParseError(f"claude CLI: {proc.stderr.strip() or proc.stdout[:300]}") from exc
+        raise CliError(f"claude CLI: {proc.stderr.strip() or proc.stdout[:300]}") from exc
     if out.get("is_error"):
-        raise ParseError(f"claude CLI: {out.get('result')}")
+        raise CliError(f"claude CLI: {out.get('result')}")
+    return out
+
+
+def claude_cli_backend(
+    system: str, user: str, schema: dict[str, Any], model: str
+) -> dict[str, Any] | None:
+    """Один вызов модели со строгой схемой и без инструментов."""
+    args = [
+        "--model", model,
+        "--system-prompt", system,
+        "--json-schema", json.dumps(schema, ensure_ascii=False),
+        "--tools", "",
+    ]  # fmt: skip
+    with tempfile.TemporaryDirectory() as cwd:  # чтобы не подтянулся CLAUDE.md репозитория
+        out = _run_claude(args, user, cwd)
     structured = out.get("structured_output")
     if isinstance(structured, dict):
         return structured
@@ -74,6 +91,22 @@ def claude_cli_backend(
         return json.loads(out.get("result") or "")
     except json.JSONDecodeError:
         return None
+
+
+OCR_PROMPT = """Прочитай файл {name} — это скриншот переписки с тестером корма для кошек.
+Перепиши ВЕСЬ текст сообщений дословно, в порядке чтения, по одному сообщению на строку.
+Если видно, кто автор сообщения, начни строку с имени и двоеточия. Ничего не исправляй,
+не пересказывай и не добавляй от себя. Ответ — только переписанный текст."""
+
+
+def ocr_image(path: Path, model: str) -> str:
+    """Текст со скриншота переписки. Единственный инструмент — Read, и только в папке картинки."""
+    args = ["--model", model, "--tools", "Read", "--allowedTools", "Read"]
+    out = _run_claude(args, OCR_PROMPT.format(name=path.name), str(path.parent))
+    text = (out.get("result") or "").strip()
+    if not text:
+        raise ParseError("на скриншоте не нашлось текста")
+    return text
 
 
 def _listing(items: dict[str, str]) -> str:

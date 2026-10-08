@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     queue_warn_hours: int = 24
     agent_stale_minutes: int = 10
 
+    # --- агент на Маке (этап 3) ---
+    agent_server_url: str = "http://localhost:8210"
+    pipeline_dir: Path = Path.home() / "CusDev-Pipeline"
+    agent_poll_seconds: int = 30
+    # меньше JOB_LEASE_MINUTES: иначе сервер вернёт задачу в очередь раньше, чем агент сдастся
+    transcribe_timeout_minutes: int = 110
+
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
     google_oauth_refresh_token: str = ""
