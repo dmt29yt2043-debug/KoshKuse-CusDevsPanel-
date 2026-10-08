@@ -20,8 +20,7 @@ MAX_QUOTES = 3
 class Status(StrEnum):
     queued = "queued"  # аудио ждёт агента
     transcribing = "transcribing"  # агент взял в аренду
-    ocr = "ocr"  # скриншот ждёт распознавания текста
-    parsing = "parsing"  # текст есть, ждёт разбора
+    parsing = "parsing"  # текст есть, агент разбирает
     done = "done"
     failed = "failed"
 

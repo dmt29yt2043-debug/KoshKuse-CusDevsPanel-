@@ -1,26 +1,30 @@
+import json
+import stat
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from cusdev.parse import ParseError, build_system_prompt, build_tool, parse_transcript
+from cusdev.parse import (
+    ParseError,
+    build_schema,
+    build_system_prompt,
+    claude_cli_backend,
+    parse_transcript,
+)
 from cusdev.taxonomy import Taxonomy
 
 TAXONOMY = Taxonomy.load(Path(__file__).parent.parent / "config" / "taxonomy.yaml")
 TRANSCRIPT = "Индейку она съела сразу, вылизала миску. Утку понюхала и ушла."
 
 
-class FakeClient:
+class FakeBackend:
     def __init__(self, *payloads):
         self.payloads = list(payloads)
         self.calls = []
-        self.messages = self
 
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-        payload = self.payloads.pop(0)
-        block = SimpleNamespace(type="tool_use", input=payload)
-        return SimpleNamespace(content=[block] if payload is not None else [])
+    def __call__(self, system, user, schema, model):
+        self.calls.append({"system": system, "user": user, "schema": schema, "model": model})
+        return self.payloads.pop(0)
 
 
 GOOD = {
@@ -44,42 +48,66 @@ def test_prompt_lists_taxonomy_keys_from_config():
 
 
 def test_tool_schema_pins_enums():
-    item = build_tool(TAXONOMY)["input_schema"]["$defs"]["FeedbackItem"]["properties"]
+    item = build_schema(TAXONOMY)["$defs"]["FeedbackItem"]["properties"]
     assert item["sku"]["enum"] == [*TAXONOMY.skus, None]
     assert item["themes"]["items"]["enum"] == list(TAXONOMY.themes)
 
 
-def test_parse_ok_passes_hints_and_forces_tool():
-    client = FakeClient(GOOD)
+def test_parse_ok_passes_hints_and_schema():
+    backend = FakeBackend(GOOD)
     parsed = parse_transcript(
-        TRANSCRIPT, client=client, model="m", taxonomy=TAXONOMY, channel="voice", sku_hint="turkey"
+        TRANSCRIPT,
+        backend=backend,
+        model="m",
+        taxonomy=TAXONOMY,
+        channel="voice",
+        sku_hint="turkey",
     )
     assert parsed.result.items[0].sku == "turkey"
-    call = client.calls[0]
-    assert call["tool_choice"] == {"type": "tool", "name": "save_parse"}
-    assert "Канал: голосовое" in call["messages"][0]["content"]
-    assert "индейка" in call["messages"][0]["content"]
+    call = backend.calls[0]
+    assert call["schema"] == build_schema(TAXONOMY)
+    assert "Канал: голосовое" in call["user"]
+    assert "индейка" in call["user"]
 
 
 def test_parse_drops_invented_quote():
     bad = {**GOOD, "items": [{**GOOD["items"][0], "quotes": [{"text": "кошка в восторге"}]}]}
-    parsed = parse_transcript(TRANSCRIPT, client=FakeClient(bad), model="m", taxonomy=TAXONOMY)
+    parsed = parse_transcript(TRANSCRIPT, backend=FakeBackend(bad), model="m", taxonomy=TAXONOMY)
     assert parsed.result.items[0].quotes == []
     assert any("не найдена" in w for w in parsed.warnings)
 
 
 def test_parse_retries_once_on_invalid_then_succeeds():
-    client = FakeClient({"items": "not-a-list"}, GOOD)
-    parsed = parse_transcript(TRANSCRIPT, client=client, model="m", taxonomy=TAXONOMY)
+    backend = FakeBackend({"items": "not-a-list"}, GOOD)
+    parsed = parse_transcript(TRANSCRIPT, backend=backend, model="m", taxonomy=TAXONOMY)
     assert parsed.result.summary
-    assert "не прошёл проверку" in client.calls[1]["messages"][0]["content"]
+    assert "не прошёл проверку" in backend.calls[1]["user"]
 
 
 def test_parse_gives_up_after_second_failure():
     with pytest.raises(ParseError):
-        parse_transcript(TRANSCRIPT, client=FakeClient(None, None), model="m", taxonomy=TAXONOMY)
+        parse_transcript(TRANSCRIPT, backend=FakeBackend(None, None), model="m", taxonomy=TAXONOMY)
 
 
 def test_parse_rejects_empty_transcript():
     with pytest.raises(ParseError):
-        parse_transcript("  ", client=FakeClient(), model="m", taxonomy=TAXONOMY)
+        parse_transcript("  ", backend=FakeBackend(), model="m", taxonomy=TAXONOMY)
+
+
+def _fake_claude(tmp_path, monkeypatch, output: dict) -> None:
+    """Подменяет бинарь claude скриптом, который печатает заданный JSON-результат."""
+    script = tmp_path / "claude"
+    script.write_text(f"#!/bin/sh\ncat > /dev/null\necho '{json.dumps(output)}'\n")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("CLAUDE_BIN", str(script))
+
+
+def test_cli_backend_reads_structured_output(tmp_path, monkeypatch):
+    _fake_claude(tmp_path, monkeypatch, {"is_error": False, "structured_output": {"a": 1}})
+    assert claude_cli_backend("s", "u", {}, "m") == {"a": 1}
+
+
+def test_cli_backend_surfaces_auth_error(tmp_path, monkeypatch):
+    _fake_claude(tmp_path, monkeypatch, {"is_error": True, "result": "OAuth token has expired"})
+    with pytest.raises(ParseError, match="expired"):
+        claude_cli_backend("s", "u", {}, "m")

@@ -1,5 +1,8 @@
 """Разбор транскрипта одним вызовом Claude → ParseResult (ARCHITECTURE.md, Р2, Р11, Р14).
 
+Claude вызывается через CLI Claude Code (`claude -p`) — по подписке Макса, без API-ключа.
+Авторизация CLI: `claude setup-token` → CLAUDE_CODE_OAUTH_TOKEN в .env.
+
 CLI для этапа 1:
     python -m cusdev.parse samples/*.txt                       # PARSE_MODEL из .env
     python -m cusdev.parse samples/*.txt -m claude-sonnet-5-5 -m claude-haiku-4-5
@@ -7,10 +10,14 @@ CLI для этапа 1:
 """
 
 import argparse
-import sys
+import json
+import os
+import subprocess
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -18,20 +25,55 @@ from cusdev.config import get_settings
 from cusdev.schemas import ParseResult, sanitize
 from cusdev.taxonomy import Taxonomy, get_taxonomy
 
-TOOL_NAME = "save_parse"
-MAX_TOKENS = 4000
+CLI_TIMEOUT_SEC = 600
 
 
 class ParseError(RuntimeError):
     pass
 
 
-class _Messages(Protocol):
-    def create(self, **kwargs: Any) -> Any: ...
+# (system, user, json_schema, model) → dict от модели или None, если ответа нет
+Backend = Callable[[str, str, dict[str, Any], str], dict[str, Any] | None]
 
 
-class _Client(Protocol):
-    messages: _Messages
+def claude_cli_backend(
+    system: str, user: str, schema: dict[str, Any], model: str
+) -> dict[str, Any] | None:
+    """Один вызов `claude -p` со строгой схемой. Без инструментов, MCP, CLAUDE.md и истории."""
+    cmd = [
+        os.environ.get("CLAUDE_BIN", "claude"),
+        "-p",
+        "--model", model,
+        "--system-prompt", system,
+        "--json-schema", json.dumps(schema, ensure_ascii=False),
+        "--output-format", "json",
+        "--tools", "",
+        "--setting-sources", "",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+    ]  # fmt: skip
+    env = dict(os.environ)
+    token = get_settings().claude_code_oauth_token
+    if token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    with tempfile.TemporaryDirectory() as cwd:  # чтобы не подтянулся CLAUDE.md репозитория
+        proc = subprocess.run(
+            cmd, input=user, capture_output=True, text=True,
+            cwd=cwd, env=env, timeout=CLI_TIMEOUT_SEC,
+        )  # fmt: skip
+    try:
+        out = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise ParseError(f"claude CLI: {proc.stderr.strip() or proc.stdout[:300]}") from exc
+    if out.get("is_error"):
+        raise ParseError(f"claude CLI: {out.get('result')}")
+    structured = out.get("structured_output")
+    if isinstance(structured, dict):
+        return structured
+    try:
+        return json.loads(out.get("result") or "")
+    except json.JSONDecodeError:
+        return None
 
 
 def _listing(items: dict[str, str]) -> str:
@@ -41,7 +83,7 @@ def _listing(items: dict[str, str]) -> str:
 def build_system_prompt(taxonomy: Taxonomy) -> str:
     return f"""Ты разбираешь расшифровку разговора с тестером корма для кошек (бренд Kosh Kuse).
 Расшифровка получена автоматически: пунктуация приблизительная, разметки спикеров нет,
-реплики разных людей идут сплошным текстом. Результат сохрани вызовом {TOOL_NAME}.
+реплики разных людей идут сплошным текстом. Ответ — строго JSON по заданной схеме.
 
 ТРИ ЖЁСТКИХ ПРАВИЛА
 1. Цитата — ДОСЛОВНО. Копируй фразу тестера символ в символ из расшифровки: без пересказа,
@@ -93,8 +135,8 @@ def build_user_message(
     return f"{head}Расшифровка:\n<transcript>\n{transcript.strip()}\n</transcript>"
 
 
-def build_tool(taxonomy: Taxonomy) -> dict[str, Any]:
-    """Схема инструмента: ключи закрытых списков зашиты как enum, чтобы модель не выдумывала."""
+def build_schema(taxonomy: Taxonomy) -> dict[str, Any]:
+    """JSON-схема ответа: ключи закрытых списков зашиты как enum, чтобы модель не выдумывала."""
     schema = ParseResult.model_json_schema()
     defs = schema["$defs"]
 
@@ -107,11 +149,7 @@ def build_tool(taxonomy: Taxonomy) -> dict[str, Any]:
     item["verdict"] = nullable_enum(taxonomy.verdicts)
     item["themes"] = {"type": "array", "items": {"enum": list(taxonomy.themes)}, "maxItems": 3}
     defs["Quote"]["properties"]["theme"] = nullable_enum(taxonomy.themes)
-    return {
-        "name": TOOL_NAME,
-        "description": "Сохранить результат разбора разговора с тестером.",
-        "input_schema": schema,
-    }
+    return schema
 
 
 @dataclass
@@ -124,8 +162,8 @@ class Parsed:
 def parse_transcript(
     transcript: str,
     *,
-    client: _Client,
     model: str,
+    backend: Backend = claude_cli_backend,
     taxonomy: Taxonomy | None = None,
     channel: str | None = None,
     sku_hint: str | None = None,
@@ -133,26 +171,19 @@ def parse_transcript(
     taxonomy = taxonomy or get_taxonomy()
     if not transcript.strip():
         raise ParseError("пустая расшифровка")
-    tool = build_tool(taxonomy)
+    schema = build_schema(taxonomy)
+    system = build_system_prompt(taxonomy)
     last_error = ""
     for _ in range(2):  # один повтор, если модель вернула что-то невалидное
         message = build_user_message(transcript, taxonomy, channel, sku_hint)
         if last_error:
             message += f"\n\nПредыдущий ответ не прошёл проверку: {last_error}. Исправь."
-        response = client.messages.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            system=build_system_prompt(taxonomy),
-            messages=[{"role": "user", "content": message}],
-            tools=[tool],
-            tool_choice={"type": "tool", "name": TOOL_NAME},
-        )
-        block = next((b for b in response.content if b.type == "tool_use"), None)
-        if block is None:
-            last_error = "не вызван инструмент"
+        payload = backend(system, message, schema, model)
+        if payload is None:
+            last_error = "ответ не JSON"
             continue
         try:
-            raw = ParseResult.model_validate(block.input)
+            raw = ParseResult.model_validate(payload)
         except ValidationError as exc:
             last_error = str(exc).splitlines()[0]
             continue
@@ -205,12 +236,6 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     settings = get_settings()
-    if not settings.anthropic_api_key:
-        print("Нет ANTHROPIC_API_KEY в .env", file=sys.stderr)
-        return 2
-    from anthropic import Anthropic
-
-    client = Anthropic(api_key=settings.anthropic_api_key)
     taxonomy = get_taxonomy()
     models = args.model or [settings.parse_model]
 
@@ -225,7 +250,6 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 parsed = parse_transcript(
                     transcript,
-                    client=client,
                     model=model,
                     taxonomy=taxonomy,
                     channel=args.channel,

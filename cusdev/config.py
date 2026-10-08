@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     taxonomy_path: Path = Path("./config/taxonomy.yaml")
 
-    anthropic_api_key: str = ""
+    # подписка Claude через CLI Claude Code: `claude setup-token` (ARCHITECTURE.md, Р14)
+    claude_code_oauth_token: str = ""
     parse_model: str = "claude-sonnet-5-5"
     batch_model: str = "claude-opus-5-5"
 
