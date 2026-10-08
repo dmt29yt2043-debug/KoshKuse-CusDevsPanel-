@@ -42,6 +42,8 @@ class Conversation(Base):
     sku_hint: Mapped[str | None] = mapped_column(String(20))
 
     original_filename: Mapped[str | None] = mapped_column(String(255))
+    # путь исходника для агента относительно media_dir (.m4a или картинка); у текста — None
+    source_path: Mapped[str | None] = mapped_column(String(255))
     duration_sec: Mapped[int | None] = mapped_column(Integer)
     size_bytes: Mapped[int | None] = mapped_column(Integer)
 

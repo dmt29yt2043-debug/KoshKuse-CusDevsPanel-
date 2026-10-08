@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     app_base_url: str = "http://localhost:8210"
     access_key: str = ""
+    timezone: str = "Europe/Moscow"  # даты в именах файлов и на экране
     agent_token: str = ""
 
     data_dir: Path = Path("./data")
