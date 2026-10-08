@@ -1,0 +1,14 @@
+# Прод на общем VPS (ARCHITECTURE.md, Р3). Наружу отдаёт host-Caddy:
+#   cusdev.srv1362562.hstgr.cloud { reverse_proxy localhost:8210 }
+# База и аудио — в /opt/cusdev-data, ВНЕ дерева, которое перезаписывает rsync --delete.
+name: cusdev
+
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - /opt/cusdev-data:/data
+    ports:
+      - "127.0.0.1:8210:8000"
